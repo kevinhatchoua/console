@@ -25,7 +25,10 @@ PF_PIDS=()
 start_pf() {
   local label=$1
   shift
-  oc "$@" >/dev/null &
+  if ! oc "$@" >/dev/null 2>&1 & then
+    echo "  skip $label (service not available)" >&2
+    return 0
+  fi
   PF_PIDS+=("$!")
   echo "  port-forward $label (pid $!)"
 }
@@ -43,15 +46,16 @@ start_pf monitoring-plugin           -n openshift-monitoring port-forward svc/mo
 start_pf mce                         -n multicluster-engine port-forward svc/console-mce-console 19300:3000
 start_pf acm                         -n open-cluster-management port-forward svc/console-chart-console-v2 19301:3000
 start_pf kubevirt-plugin             -n openshift-cnv port-forward svc/kubevirt-console-plugin-service 19445:9443
+start_pf gitops-plugin               -n openshift-gitops port-forward svc/gitops-plugin 19447:9001
 start_pf forklift-console-plugin     -n openshift-mtv port-forward svc/forklift-ui-plugin 19446:9443
 start_pf kubevirt-apiserver-proxy    -n openshift-cnv port-forward svc/kubevirt-apiserver-proxy-service 18080:8080
 start_pf forklift-inventory          -n openshift-mtv port-forward svc/forklift-inventory 18443:8443
 sleep 3
 
 export BRIDGE_PERSPECTIVES='[{"id":"dev","visibility":{"state":"Disabled"}}]'
-export BRIDGE_PLUGINS="networking-console-plugin=https://127.0.0.1:19443/,monitoring-plugin=https://127.0.0.1:19444/,mce=https://127.0.0.1:19300/plugin/,acm=https://127.0.0.1:19301/plugin/,kubevirt-plugin=https://127.0.0.1:19445/,forklift-console-plugin=https://127.0.0.1:19446/"
-export BRIDGE_PLUGINS_ORDER="networking-console-plugin,monitoring-plugin,mce,acm,kubevirt-plugin,forklift-console-plugin"
-export BRIDGE_I18N_NAMESPACES="plugin__networking-console-plugin,plugin__monitoring-plugin,plugin__mce,plugin__acm,plugin__forklift-console-plugin,plugin__kubevirt-plugin"
+export BRIDGE_PLUGINS="networking-console-plugin=https://127.0.0.1:19443/,monitoring-plugin=https://127.0.0.1:19444/,mce=https://127.0.0.1:19300/plugin/,acm=https://127.0.0.1:19301/plugin/,kubevirt-plugin=https://127.0.0.1:19445/,gitops-plugin=https://127.0.0.1:19447/,forklift-console-plugin=https://127.0.0.1:19446/"
+export BRIDGE_PLUGINS_ORDER="networking-console-plugin,monitoring-plugin,mce,acm,kubevirt-plugin,gitops-plugin,forklift-console-plugin"
+export BRIDGE_I18N_NAMESPACES="plugin__networking-console-plugin,plugin__monitoring-plugin,plugin__mce,plugin__acm,plugin__forklift-console-plugin,plugin__kubevirt-plugin,plugin__gitops-plugin"
 export BRIDGE_PLUGIN_PROXY='{"services":[{"authorize":true,"caCertificate":"","consoleAPIPath":"/api/proxy/plugin/mce/console/","endpoint":"https://127.0.0.1:19300"},{"authorize":true,"caCertificate":"","consoleAPIPath":"/api/proxy/plugin/acm/console/","endpoint":"https://127.0.0.1:19301"},{"authorize":true,"caCertificate":"","consoleAPIPath":"/api/proxy/plugin/kubevirt-plugin/kubevirt-apiserver-proxy/","endpoint":"https://127.0.0.1:18080"},{"authorize":true,"caCertificate":"","consoleAPIPath":"/api/proxy/plugin/forklift-console-plugin/forklift-inventory/","endpoint":"https://127.0.0.1:18443"}]}'
 export BRIDGE_RELEASE_VERSION="${BRIDGE_RELEASE_VERSION:-$(oc get clusterversion version -o jsonpath='{.status.desired.version}' 2>/dev/null || echo 4.21.0)}"
 
