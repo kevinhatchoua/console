@@ -49,13 +49,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script type="text/javascript" nonce="[[ .ScriptNonce ]]">
       window.SERVER_FLAGS = [[ .ServerFlags ]];
-      let theme = localStorage.getItem('bridge/theme') || 'systemDefault';
-      if (theme === 'systemDefault' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        theme = 'dark';
-      }
-      if (theme === 'dark') {
-        document.documentElement.classList.add('pf-v6-theme-dark');
-      }
+      (function () {
+        var html = document.documentElement;
+        var reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
+        var highContrast =
+          window.matchMedia('(forced-colors: active)').matches ||
+          window.matchMedia('(prefers-contrast: more)').matches;
+        html.classList.add('pf-v6-theme-felt');
+        if (!reducedTransparency && !highContrast) {
+          html.classList.add('pf-v6-theme-glass');
+        } else if (highContrast) {
+          html.classList.add('pf-v6-theme-high-contrast');
+        }
+        var theme = localStorage.getItem('bridge/theme') || 'systemDefault';
+        if (theme === 'systemDefault' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          theme = 'dark';
+        }
+        if (theme === 'dark') {
+          html.classList.add('pf-v6-theme-dark');
+        }
+      })();
     </script>
   </head>
 

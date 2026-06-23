@@ -1,14 +1,25 @@
 import type { FC, ReactNode } from 'react';
 import { createContext, useState, useCallback, useEffect, useMemo, useContext } from 'react';
 import { useUserPreference } from '@console/shared/src/hooks/useUserPreference';
+import {
+  applyPatternFlyThemeClasses,
+  darkThemeMq,
+  subscribeToPatternFlyThemeMediaQueries,
+} from './patternflyTheme';
+
+export {
+  THEME_DARK_CLASS,
+  THEME_FELT_CLASS,
+  THEME_GLASS_CLASS,
+  THEME_HIGH_CONTRAST_CLASS,
+  darkThemeMq,
+} from './patternflyTheme';
 
 export const THEME_USER_PREFERENCE_KEY = 'console.theme';
 export const THEME_LOCAL_STORAGE_KEY = 'bridge/theme';
 const THEME_SYSTEM_DEFAULT = 'systemDefault';
-export const THEME_DARK_CLASS = 'pf-v6-theme-dark';
 export const THEME_DARK = 'dark';
 export const THEME_LIGHT = 'light';
-export const darkThemeMq = window.matchMedia('(prefers-color-scheme: dark)');
 
 type PROCESSED_THEME = typeof THEME_DARK | typeof THEME_LIGHT;
 
@@ -16,16 +27,11 @@ type Theme = {
   theme: PROCESSED_THEME;
 };
 
-const updateThemeClass = (htmlTagElement: HTMLElement, theme: string): PROCESSED_THEME => {
+const resolveColorScheme = (theme: string): PROCESSED_THEME => {
   if (darkThemeMq.matches && theme === THEME_SYSTEM_DEFAULT) {
     theme = THEME_DARK;
   }
-  if (theme === THEME_DARK) {
-    htmlTagElement.classList.add(THEME_DARK_CLASS);
-    return THEME_DARK;
-  }
-  htmlTagElement.classList.remove(THEME_DARK_CLASS);
-  return THEME_LIGHT;
+  return theme === THEME_DARK ? THEME_DARK : THEME_LIGHT;
 };
 
 export const ThemeContext = createContext<Theme>({
@@ -46,9 +52,10 @@ const useProcessedTheme = () => {
   );
   const [processedTheme, setProcessedTheme] = useState<PROCESSED_THEME>(localTheme);
 
-  const applyTheme = useCallback((isDark: boolean) => {
-    const resolved = updateThemeClass(document.documentElement, isDark ? THEME_DARK : THEME_LIGHT);
-    setProcessedTheme(resolved);
+  const applyTheme = useCallback((themePreference: string) => {
+    const colorScheme = resolveColorScheme(themePreference);
+    applyPatternFlyThemeClasses(document.documentElement, colorScheme);
+    setProcessedTheme(colorScheme);
   }, []);
 
   useEffect(() => {
@@ -56,14 +63,24 @@ const useProcessedTheme = () => {
       return;
     }
 
+    applyTheme(theme);
+
     if (theme === THEME_SYSTEM_DEFAULT) {
-      applyTheme(darkThemeMq.matches);
-      const listener = (e: MediaQueryListEvent) => applyTheme(e.matches);
-      darkThemeMq.addEventListener('change', listener);
-      return () => darkThemeMq.removeEventListener('change', listener);
+      const onSystemChange = () => applyTheme(THEME_SYSTEM_DEFAULT);
+      darkThemeMq.addEventListener('change', onSystemChange);
+      return () => darkThemeMq.removeEventListener('change', onSystemChange);
     }
 
-    applyTheme(theme === THEME_DARK);
+    return undefined;
+  }, [applyTheme, theme, themeLoaded]);
+
+  useEffect(() => {
+    if (!themeLoaded) {
+      return;
+    }
+
+    const refreshContrastAndGlass = () => applyTheme(theme);
+    return subscribeToPatternFlyThemeMediaQueries(refreshContrastAndGlass);
   }, [applyTheme, theme, themeLoaded]);
 
   useEffect(() => {

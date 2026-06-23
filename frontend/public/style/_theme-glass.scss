@@ -1,0 +1,9 @@
+// Glass mode layout adjustments so PF wallpaper and blur surfaces are visible.
+// @see https://www.patternfly.org/foundations-and-styles/theming/glass-mode-handbook
+
+:where(:root.pf-v6-theme-glass) {
+  body,
+  #app {
+    background-color: transparent;
+  }
+}

@@ -51,6 +51,10 @@ export BRIDGE_K8S_AUTH_BEARER_TOKEN
 BRIDGE_USER_SETTINGS_LOCATION="localstorage"
 export BRIDGE_USER_SETTINGS_LOCATION
 
+# Use Red Hat OpenShift product branding (masthead logo, favicon, title) for local dev.
+BRIDGE_BRANDING="ocp"
+export BRIDGE_BRANDING
+
 # This is a workaround for local setup where Helm CLI has been setup with helm repositories
 HELM_REPOSITORY_CONFIG="/tmp/repositories.yaml"
 export HELM_REPOSITORY_CONFIG
