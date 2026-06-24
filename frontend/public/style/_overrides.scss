@@ -4,6 +4,28 @@
 
 $masthead-logo-max-height: 60px;
 
+.co-tab-title-with-count {
+  display: inline-flex;
+  align-items: center;
+  column-gap: var(--pf-t--global--spacer--xs);
+}
+
+.co-tab-count-badge.pf-v6-c-badge {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  block-size: 1.125rem;
+  min-block-size: 1.125rem;
+  min-inline-size: 1.125rem;
+  inline-size: max-content;
+  padding-block: 0;
+  padding-inline: 0.1875rem;
+  line-height: 1;
+  font-size: var(--pf-t--global--font--size--xs);
+}
+
 .co-catalog-tile {
   .catalog-tile-pf-icon {
     font-size: unset !important;

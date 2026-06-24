@@ -112,6 +112,9 @@ export const getPropertyDescription = (
   kindObj: K8sKind,
   propertyPath: string | string[],
 ): string => {
+  if (!kindObj) {
+    return null;
+  }
   const path: string[] = _.toPath(propertyPath);
   const definition = findDefinition(kindObj, path);
   return definition ? definition.description : null;

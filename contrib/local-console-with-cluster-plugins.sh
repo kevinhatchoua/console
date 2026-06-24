@@ -51,7 +51,8 @@ source "$ROOT_DIR/contrib/oc-environment.sh"
 set -euo pipefail
 
 # Stale port-forwards from a prior session block new ones and break plugin loading.
-PLUGIN_PORTS=(19443 19444 19445 19446 19300 19301 18080 18443)
+# Do not clear 9001/9002 — those are local webpack dev servers for plugins.
+PLUGIN_PORTS=(19443 19444 19445 19446 19447 19448 19300 19301 18080 18443)
 for port in "${PLUGIN_PORTS[@]}"; do
   pids=$(lsof -ti ":$port" 2>/dev/null || true)
   if [ -n "$pids" ]; then
@@ -166,7 +167,7 @@ trap cleanup EXIT INT TERM
 echo "Reading Console operator configuration from cluster..."
 CLUSTER_PLUGINS=$(oc get console.operator cluster -o jsonpath='{range .spec.plugins[*]}{.name}{"\n"}{end}' 2>/dev/null || true)
 if [ -z "$CLUSTER_PLUGINS" ]; then
-  CLUSTER_PLUGINS=$'networking-console-plugin\nmonitoring-plugin\nmce\nacm\nkubevirt-plugin\nforklift-console-plugin\ngitops-plugin'
+  CLUSTER_PLUGINS=$'networking-console-plugin\nmonitoring-plugin\nmce\nacm\nkubevirt-plugin\nforklift-console-plugin\ngitops-plugin\nnmstate-console-plugin'
 fi
 CLUSTER_PERSPECTIVES=$(oc get console.operator cluster -o jsonpath='{.spec.customization.perspectives}' 2>/dev/null || true)
 if [ -n "$CLUSTER_PERSPECTIVES" ] && [ "$CLUSTER_PERSPECTIVES" != "null" ]; then
@@ -208,8 +209,15 @@ if plugin_enabled acm; then
 fi
 
 KUBEVIRT_OK=false
+KUBEVIRT_PLUGIN_URL="https://127.0.0.1:19445/"
 if plugin_enabled kubevirt-plugin; then
-  start_pf_if_svc_exists kubevirt-plugin openshift-cnv kubevirt-console-plugin-service 19445:9443 && KUBEVIRT_OK=true
+  if curl -sf "http://localhost:9002/plugin-manifest.json" >/dev/null 2>&1; then
+    KUBEVIRT_PLUGIN_URL="http://localhost:9002/"
+    KUBEVIRT_OK=true
+    echo "  Using local kubevirt-plugin webpack dev server (port 9002)"
+  elif start_pf_if_svc_exists kubevirt-plugin openshift-cnv kubevirt-console-plugin-service 19445:9443; then
+    KUBEVIRT_OK=true
+  fi
   start_pf_if_svc_exists kubevirt-apiserver-proxy openshift-cnv kubevirt-apiserver-proxy-service 18080:8080 || true
 fi
 
@@ -222,6 +230,11 @@ FORKLIFT_OK=false
 if plugin_enabled forklift-console-plugin; then
   start_pf_if_svc_exists forklift-console-plugin openshift-mtv forklift-ui-plugin 19446:9443 && FORKLIFT_OK=true
   start_pf_if_svc_exists forklift-inventory openshift-mtv forklift-inventory 18443:8443 || true
+fi
+
+NMSTATE_OK=false
+if plugin_enabled nmstate-console-plugin; then
+  start_pf_if_svc_exists nmstate-console-plugin openshift-nmstate nmstate-console-plugin 19448:9443 && NMSTATE_OK=true
 fi
 
 start_token_refresh
@@ -247,13 +260,20 @@ if plugin_enabled acm && [ "$ACM_OK" = true ]; then
   wait_for_url acm "https://127.0.0.1:19301/plugin/plugin-manifest.json" true || FAILED=$((FAILED + 1))
 fi
 if plugin_enabled kubevirt-plugin && [ "$KUBEVIRT_OK" = true ]; then
-  wait_for_url kubevirt-plugin "https://127.0.0.1:19445/plugin-manifest.json" true || FAILED=$((FAILED + 1))
+  if [[ "$KUBEVIRT_PLUGIN_URL" == http://* ]]; then
+    wait_for_url kubevirt-plugin "${KUBEVIRT_PLUGIN_URL}plugin-manifest.json" || FAILED=$((FAILED + 1))
+  else
+    wait_for_url kubevirt-plugin "${KUBEVIRT_PLUGIN_URL}plugin-manifest.json" true || FAILED=$((FAILED + 1))
+  fi
 fi
 if plugin_enabled gitops-plugin && [ "$GITOPS_OK" = true ]; then
   wait_for_url gitops-plugin "https://127.0.0.1:19447/plugin-manifest.json" true || FAILED=$((FAILED + 1))
 fi
 if plugin_enabled forklift-console-plugin && [ "$FORKLIFT_OK" = true ]; then
   wait_for_url forklift-console-plugin "https://127.0.0.1:19446/plugin-manifest.json" true || FAILED=$((FAILED + 1))
+fi
+if plugin_enabled nmstate-console-plugin && [ "$NMSTATE_OK" = true ]; then
+  wait_for_url nmstate-console-plugin "https://127.0.0.1:19448/plugin-manifest.json" true || FAILED=$((FAILED + 1))
 fi
 
 if [ "$FAILED" -gt 0 ]; then
@@ -290,13 +310,16 @@ while IFS= read -r plugin; do
       [ "$ACM_OK" = true ] && add_plugin acm "https://127.0.0.1:19301/plugin/"
       ;;
     kubevirt-plugin)
-      [ "$KUBEVIRT_OK" = true ] && add_plugin kubevirt-plugin "https://127.0.0.1:19445/"
+      [ "$KUBEVIRT_OK" = true ] && add_plugin kubevirt-plugin "$KUBEVIRT_PLUGIN_URL"
       ;;
     gitops-plugin)
       [ "$GITOPS_OK" = true ] && add_plugin gitops-plugin "https://127.0.0.1:19447/"
       ;;
     forklift-console-plugin)
       [ "$FORKLIFT_OK" = true ] && add_plugin forklift-console-plugin "https://127.0.0.1:19446/"
+      ;;
+    nmstate-console-plugin)
+      [ "$NMSTATE_OK" = true ] && add_plugin nmstate-console-plugin "https://127.0.0.1:19448/"
       ;;
     *)
       echo "  NOTE: cluster plugin '$plugin' is not configured for local port-forward" >&2

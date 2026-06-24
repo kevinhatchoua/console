@@ -11,7 +11,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="$ROOT_DIR/.local-console"
 PID_FILE="$STATE_DIR/pids"
 BRIDGE_PID_FILE="$STATE_DIR/bridge.pid"
-PLUGIN_PORTS=(9000 19443 19444 19445 19446 19300 19301 18080 18443 9001)
+PLUGIN_PORTS=(9000 19443 19444 19445 19446 19447 19448 19300 19301 18080 18443)
 
 stop_pid() {
   local pid=$1
@@ -47,5 +47,6 @@ done
 pkill -f "./bin/bridge" 2>/dev/null || true
 pkill -f "port-forward svc/kubevirt-console-plugin-service" 2>/dev/null || true
 pkill -f "port-forward svc/networking-console-plugin" 2>/dev/null || true
+pkill -f "port-forward svc/nmstate-console-plugin" 2>/dev/null || true
 
 echo "Local console stopped."
