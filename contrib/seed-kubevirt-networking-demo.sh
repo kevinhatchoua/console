@@ -5,7 +5,7 @@
 #
 # Usage:
 #   ./contrib/seed-kubevirt-networking-demo.sh
-#   NAMESPACE=my-ns VM_COUNT=10 ./contrib/seed-kubevirt-networking-demo.sh
+#   NAMESPACE=my-ns VM_COUNT=15 ./contrib/seed-kubevirt-networking-demo.sh
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 NAMESPACE="${NAMESPACE:-openshift-controller-manager-operator}"
-VM_COUNT="${VM_COUNT:-10}"
+VM_COUNT="${VM_COUNT:-15}"
 STORAGE_CLASS="${STORAGE_CLASS:-gp3-csi}"
 INSTANCETYPE="${INSTANCETYPE:-u1.medium}"
 PREFERENCE="${PREFERENCE:-rhel.10}"
@@ -33,6 +33,8 @@ apply_nad() {
   local name=$1
   if oc get net-attach-def "$name" -n "$NAMESPACE" >/dev/null 2>&1; then
     echo "  NAD ${name} already exists"
+    oc annotate net-attach-def "$name" -n "$NAMESPACE" \
+      networking-console.redhat.com/demo-seed=true --overwrite 2>/dev/null || true
     return
   fi
   echo "  Creating NAD ${name}"
@@ -43,6 +45,7 @@ metadata:
   name: ${name}
   namespace: ${NAMESPACE}
   annotations:
+    networking-console.redhat.com/demo-seed: "true"
     k8s.v1.cni.cncf.io/resourceName: bridge.network.kubevirt.io/linuxBridge
 spec:
   config: |-
@@ -62,7 +65,15 @@ apply_nad nad-black-landfowl
 apply_nad nad-red-falcon
 apply_nad nad-blue-heron
 
-NADS=(nad-black-landfowl nad-red-falcon nad-blue-heron)
+# Prefer NADs that already exist in the namespace (demo or pre-existing).
+NADS=()
+while IFS= read -r nad; do
+  [ -n "$nad" ] && NADS+=("$nad")
+done < <(oc get net-attach-def -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+if [ ${#NADS[@]} -eq 0 ]; then
+  NADS=(nad-black-landfowl nad-red-falcon nad-blue-heron)
+fi
+echo "  Assigning VMs across ${#NADS[@]} network(s): ${NADS[*]}"
 
 create_vm() {
   local vm_name=$1
@@ -147,15 +158,20 @@ EOF
 VM_NAMES=(
   amber-fox-01 coral-lynx-02 jade-otter-03 ruby-hawk-04
   silver-wolf-05 bronze-elk-06 copper-bear-07 ivory-seal-08
-  onyx-puma-09 pearl-crane-10
+  onyx-puma-09 pearl-crane-10 slate-viper-11 garnet-lynx-12
+  topaz-mink-13 quartz-finch-14 opal-newt-15
 )
 
-for i in $(seq 0 $((VM_COUNT - 1))); do
-  vm_name="${VM_NAMES[$i]:-demo-vm-$((i + 1))}"
-  nad_name="${NADS[$((i % ${#NADS[@]}))]}"
-  nic_name="nic-${vm_name}"
-  create_vm "$vm_name" "$nad_name" "$nic_name"
-done
+if [ "$VM_COUNT" -gt 0 ]; then
+  for i in $(seq 0 $((VM_COUNT - 1))); do
+    vm_name="${VM_NAMES[$i]:-demo-vm-$((i + 1))}"
+    nad_name="${NADS[$((i % ${#NADS[@]}))]}"
+    nic_name="nic-${vm_name}"
+    create_vm "$vm_name" "$nad_name" "$nic_name"
+  done
+else
+  echo "  Skipping VM creation (VM_COUNT=0)"
+fi
 
 echo ""
 echo "Done. Resources in ${NAMESPACE}:"

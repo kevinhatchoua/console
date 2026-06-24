@@ -180,6 +180,13 @@ plugin_enabled() {
   echo "$CLUSTER_PLUGINS" | grep -qx "$1"
 }
 
+# Local webpack on :9002 can supply kubevirt even when the cluster Console operator
+# has not enabled kubevirt-plugin (common on ACM/GRC clusters without CNV).
+if ! plugin_enabled kubevirt-plugin && curl -sf "http://localhost:9002/plugin-manifest.json" >/dev/null 2>&1; then
+  CLUSTER_PLUGINS="${CLUSTER_PLUGINS}"$'\n'"kubevirt-plugin"
+  echo "  Including local kubevirt-plugin (webpack :9002) — not in cluster Console operator plugins"
+fi
+
 echo "Starting plugin port-forwards..."
 NETWORKING_PLUGIN_URL="https://127.0.0.1:19443/"
 NETWORKING_OK=false
