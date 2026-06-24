@@ -1,6 +1,7 @@
 .env
 .idea
 .vscode
+.local-console/
 
 # Yarn v4 (Berry)
 .yarn/*

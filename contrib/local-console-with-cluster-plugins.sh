@@ -4,13 +4,38 @@
 # as the in-cluster console. Required because contrib/oc-environment.sh only
 # configures API access — it does not load Console operator plugins/customization.
 #
-# Usage (from repo root, with yarn dev already running in another terminal):
+# Usage (from repo root):
+#   ./contrib/local-console-daemon.sh              # recommended: auto-recover when online
+#   ./contrib/install-local-console-autostart.sh # macOS: run daemon at login
+#
+# Manual (yarn dev must be running on :8080):
 #   ./contrib/local-console-with-cluster-plugins.sh
+#
+# Options:
+#   --managed-by-daemon   Used by local-console-daemon.sh (writes pid file, logs to file)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if ! oc whoami >/dev/null 2>&1; then
+MANAGED_BY_DAEMON=false
+for arg in "$@"; do
+  if [ "$arg" = "--managed-by-daemon" ]; then
+    MANAGED_BY_DAEMON=true
+  fi
+done
+
+# shellcheck source=contrib/local-console-lib.sh
+source "$ROOT_DIR/contrib/local-console-lib.sh"
+
+STATE_DIR="${ROOT_DIR}/.local-console"
+BRIDGE_PID_FILE="${STATE_DIR}/bridge.pid"
+mkdir -p "$STATE_DIR"
+
+if ! local_console_cluster_reachable; then
+  if [ "$MANAGED_BY_DAEMON" = true ]; then
+    echo "Cluster not reachable; daemon will retry." >&2
+    exit 1
+  fi
   echo "Log in with oc first." >&2
   exit 1
 fi
@@ -25,17 +50,69 @@ PF_PIDS=()
 start_pf() {
   local label=$1
   shift
-  if ! oc "$@" >/dev/null 2>&1 & then
-    echo "  skip $label (service not available)" >&2
+  # Restart port-forwards after VPN/network drops (oc port-forward exits when disconnected).
+  (
+    while true; do
+      if oc "$@" 2>/dev/null; then
+        echo "  port-forward $label disconnected, restarting in 3s..." >&2
+        sleep 3
+      else
+        echo "  port-forward $label unavailable, retrying in 30s..." >&2
+        sleep 30
+      fi
+    done
+  ) &
+  PF_PIDS+=("$!")
+  echo "  port-forward $label (supervisor pid $!)"
+}
+
+start_token_refresh() {
+  if [ "${BRIDGE_USE_LONG_LIVED_TOKEN:-}" = "1" ]; then
+    echo "  using long-lived token from examples/token"
     return 0
   fi
+  if [ -z "${BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE:-}" ]; then
+    return 0
+  fi
+  local token_file=$BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE
+  (
+    while true; do
+      sleep 300
+      local_console_refresh_token || true
+    done
+  ) &
   PF_PIDS+=("$!")
-  echo "  port-forward $label (pid $!)"
+  echo "  token refresh (pid $!, every 5m)"
+}
+
+start_connectivity_watchdog() {
+  (
+    local was_offline=false
+    while true; do
+      if local_console_cluster_reachable; then
+        if [ "$was_offline" = true ]; then
+          echo "  cluster reachable again — refreshing token and browser..." >&2
+          local_console_refresh_token || true
+          sleep 5
+          local_console_reload_browser
+          local_console_notify "OpenShift console reconnected"
+          was_offline=false
+        fi
+      else
+        was_offline=true
+      fi
+      sleep "${LOCAL_CONSOLE_POLL_INTERVAL:-30}"
+    done
+  ) &
+  PF_PIDS+=("$!")
+  echo "  connectivity watchdog (pid $!)"
 }
 
 cleanup() {
+  rm -f "$BRIDGE_PID_FILE"
   for pid in "${PF_PIDS[@]}"; do
     kill "$pid" 2>/dev/null || true
+    pkill -P "$pid" 2>/dev/null || true
   done
 }
 trap cleanup EXIT INT TERM
@@ -50,6 +127,8 @@ start_pf gitops-plugin               -n openshift-gitops port-forward svc/gitops
 start_pf forklift-console-plugin     -n openshift-mtv port-forward svc/forklift-ui-plugin 19446:9443
 start_pf kubevirt-apiserver-proxy    -n openshift-cnv port-forward svc/kubevirt-apiserver-proxy-service 18080:8080
 start_pf forklift-inventory          -n openshift-mtv port-forward svc/forklift-inventory 18443:8443
+start_token_refresh
+start_connectivity_watchdog
 sleep 3
 
 export BRIDGE_PERSPECTIVES='[{"id":"dev","visibility":{"state":"Disabled"}}]'
@@ -64,6 +143,10 @@ echo "Starting bridge with cluster plugins and perspective customization..."
 echo "  Dev perspective: Disabled (matches Console operator)"
 echo "  Plugins: ${BRIDGE_PLUGINS_ORDER}"
 echo "  Console URL: http://localhost:9000"
+echo "  Auto-recovery: port-forwards + token refresh + browser reload on reconnect"
 echo ""
 
-exec ./bin/bridge
+./bin/bridge &
+BRIDGE_PID=$!
+echo "$BRIDGE_PID" >"$BRIDGE_PID_FILE"
+wait "$BRIDGE_PID"

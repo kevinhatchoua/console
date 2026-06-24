@@ -45,8 +45,16 @@ if [ -n "$CATALOGD_HOSTNAME" ]; then
     export BRIDGE_K8S_MODE_OFF_CLUSTER_CATALOGD
 fi
 
-BRIDGE_K8S_AUTH_BEARER_TOKEN=$(oc whoami --show-token)
+# Prefer long-lived SA token (examples/secret.yaml + oc extract) over short-lived user tokens.
+if [ -f "./examples/token" ]; then
+  BRIDGE_K8S_AUTH_BEARER_TOKEN=$(cat ./examples/token)
+  BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE=./examples/token
+  BRIDGE_USE_LONG_LIVED_TOKEN=1
+else
+  BRIDGE_K8S_AUTH_BEARER_TOKEN=$(oc whoami --show-token)
+fi
 export BRIDGE_K8S_AUTH_BEARER_TOKEN
+export BRIDGE_USE_LONG_LIVED_TOKEN
 
 BRIDGE_USER_SETTINGS_LOCATION="localstorage"
 export BRIDGE_USER_SETTINGS_LOCATION
@@ -60,13 +68,14 @@ HELM_REPOSITORY_CONFIG="/tmp/repositories.yaml"
 export HELM_REPOSITORY_CONFIG
 
 
-# Add bearer token file to bridge env var
-temp_file=$(mktemp)
-BEARER_TOKEN=$(oc whoami --show-token)
-if [ -n "$BEARER_TOKEN" ]; then
-    echo "$BEARER_TOKEN" > $temp_file
-    BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE=$temp_file
-    export BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE
+# Bearer token file for bridge API proxy (re-read from disk on each request).
+if [ -f "./examples/token" ]; then
+  BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE=./examples/token
+elif [ -n "${BRIDGE_K8S_AUTH_BEARER_TOKEN:-}" ]; then
+  temp_file=$(mktemp)
+  echo "$BRIDGE_K8S_AUTH_BEARER_TOKEN" >"$temp_file"
+  BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE=$temp_file
 fi
+export BRIDGE_K8S_MODE_OFF_CLUSTER_SERVICE_ACCOUNT_BEARER_TOKEN_FILE
 
 echo "Using $BRIDGE_K8S_MODE_OFF_CLUSTER_ENDPOINT"
