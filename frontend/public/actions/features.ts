@@ -49,8 +49,12 @@ const detectClusterVersion = (dispatch) =>
   );
 
 const projectRequestPath = '/apis/project.openshift.io/v1/projectrequests';
-const detectCanCreateProject = (dispatch) =>
-  fetchURL(projectRequestPath).then(
+const detectCanCreateProject = (dispatch) => {
+  if (window.SERVER_FLAGS?.authDisabled) {
+    dispatch(setFlag(FLAGS.CAN_CREATE_PROJECT, true));
+    return Promise.resolve();
+  }
+  return fetchURL(projectRequestPath).then(
     (res) => dispatch(setFlag(FLAGS.CAN_CREATE_PROJECT, res.status === 'Success')),
     (err) => {
       const status = err?.response?.status;
@@ -62,6 +66,7 @@ const detectCanCreateProject = (dispatch) =>
       }
     },
   );
+};
 
 const detectUser = (dispatch: Dispatch) =>
   client
